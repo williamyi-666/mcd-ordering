@@ -3,8 +3,14 @@
 > 说出人数、忌口和预算，**掷三颗骰子**决定今天吃什么 —— 自动完成
 > 定位门店 → 领券 → 选餐 → 用券 → 校验 → 算价 → 下单 → 付款。
 
+[![参赛作品](https://img.shields.io/badge/麦当劳程序员节-参赛作品-DA291C)](https://github.com/M-China/mcd-developer-innovation-challenge/issues/1358)
+[![报名 Issue](https://img.shields.io/badge/报名_Issue-%231358-181717)](https://github.com/M-China/mcd-developer-innovation-challenge/issues/1358)
+[![Star](https://img.shields.io/github/stars/williamyi-666/0921?style=social)](https://github.com/williamyi-666/0921/stargazers)
+
 基于麦当劳 MCP（Model Context Protocol）能力开发的创意 Skill，
 面向中国大陆地区开发者参加 **麦当劳程序员节创意开发大赛**。
+
+> ⚠️ 本项目为**非麦当劳官方产品**，仅为参赛作品。所有订单与支付均由用户本人确认。
 
 ---
 
@@ -250,7 +256,7 @@ mcd-ordering/
 │   └── defaults.json             默认值（门店/渠道/忌口，本地生成不入库）
 ├── tests/
 │   ├── dice_roll.test.py         骰子引擎回归（93 项断言）
-│   ├── pay.test.py               付款闭环回归（20 项断言）
+│   ├── pay.test.py               付款闭环回归（26 项断言）
 │   ├── api_regression.py         接口回归（55 项断言）
 │   ├── game.test.js              游戏功能回归
 │   ├── reachability.test.js      关卡可达性物理模拟
@@ -258,7 +264,8 @@ mcd-ordering/
 └── docs/
     ├── 开发文档.md                17 章技术文档
     ├── 骰子选餐方案.md            骰子方案完整设计与实测
-    └── 参赛清单.md                参赛申请模板与注意事项
+    ├── 参赛清单.md                参赛申请模板与注意事项
+    └── 参赛文案.md                报名原文 + 短/中/长版传播文案
 ```
 
 
