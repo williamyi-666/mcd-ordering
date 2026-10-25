@@ -10,7 +10,7 @@ description: >-
   几个人吃、几个人份、不吃辣、吃素、素食、纯素、过敏、不要香菜、预算多少、算价、多少钱、
   麦乐送、外送、送到家、得来速、到店自取、领券、有没有券、用券、下单、麦乐鸡、巨无霸、
   开心乐园餐、晚餐、午餐、早餐、投骰子、掷骰子、随机选、随便来、今天吃什么、
-  手气、抽签、转盘。Use when the user wants to order McDonald's food by
+  手气、抽签、转盘、连投、各点各的。Use when the user wants to order McDonald's food by
   describing party size, dietary restrictions and budget in one sentence.
 description_zh: 麦当劳一句话点餐：解析人数、忌口、预算，自动搭配并用券下单
 description_en: One-sentence McDonald's ordering: parse party size, dietary restrictions and budget, auto-build the combo, apply the best coupon, and place the order
@@ -21,6 +21,10 @@ agent_created: true
 # 麦当劳点餐
 
 用户一句话说清就餐需求，你负责把它变成一份能下单的方案。
+
+**选餐默认用掷骰**：用户说人数、忌口、预算档，三颗骰子掷出 216 种组合之一，
+按强度阶梯落到候选池对应价位——点数越大越贵，同一组骰面永远得到同一份餐。
+掷之前必须确认五项关键信息，掷完才揭示套餐与费用。
 
 ---
 
@@ -157,39 +161,19 @@ python scripts/mcd_call.py query-meals '{"storeCode":"...","orderType":2,"beType
 python scripts/mcd_call.py query-meal-detail '{"storeCode":"...","orderType":2,"beType":2,"beCode":"...","code":"9900010341"}'
 ```
 
-### Step 4 · 搭配（核心）
+### Step 4 · 选餐（核心：骰子为主）
 
-**子商品编码必须从 `query-meal-detail` 的 `choices[].code` 取，不要猜** ——
-猜错会报 `60006`，很容易误判成"商品售罄"。
+**默认走骰子。** 说得出想吃什么就走 4B 指名商品；说不出就走这里。
 
-用 `menu_helper.py` 做候选筛选与忌口过滤：
 
-```bash
-# 候选套餐（按人数）
-python scripts/menu_helper.py candidates --menu menu.json --people 3 --details det/
-
-# 忌口检查
-python scripts/menu_helper.py check --menu menu.json --plan plan.json --restriction 不吃辣 吃素 过敏
-```
-
-**忌口处理原则：尽力满足 + 显式告知。菜单无法满足时明说，并把忌口写进
-订单 `remark`，同时推荐麦当劳实际有的替代品保底。不要静默降级。**
-
-已知硬边界（详见 `references/dietary.md`）：
-
-- **菜单没有素食主餐**（唯一带"素"的是大米风味麦旋风，是甜品）
-- **特调没有"去辣"选项**，无法标注过敏原
-- 唯一含素食小食的正餐套餐是 `9900011129`「"堡"你欢乐套餐」（含苹果片）
-
-### Step 4b · 骰子模式（可选，用户说"随便/今天吃什么"时）
-
-**这是决策加速器，不是替代品** —— 默认仍走精确匹配，用户明确要"随机"才用。
+骰子不是噱头：**它决定了价位，不是随机贴个名字**。
+216 级阶梯让点数与价格严格单调，同骰面必得同一份餐（可复现、可分享）。
 
 > 🔴 **铁律：先确认关键信息，再掷骰。**
 > 骰子掷出后用户看到的是「结果」而非「选项」——此时再说"其实我不吃辣/我要外送"，
 > 整轮就白掷了。所以五个必填槽位必须在**投掷之前**问清，缺一不可。
 
-#### 4b-0 投前确认（强制，不可跳过；有默认值则只问 2 项）
+#### 4.1 投前确认（强制，不可跳过；有默认值则只问 2 项）
 
 先运行确认卡，看还缺什么：
 
@@ -242,7 +226,7 @@ python scripts/dice_roll.py --menu menu.json --forget-defaults
 4. 外送/得来速还要先取 `beCode`（`delivery-query-stores` 返回，**不能自己拼**）
 5. **投前确认可用默认值轻量化，但付款前必须重新强确认**（见 Step 9）
 
-#### 4b-1 备齐权威供餐人数（每店首次，或菜单变更后）
+#### 4.2 备齐权威供餐人数（每店首次，或菜单变更后）
 
 ```bash
 python scripts/serves_probe.py --menu menu.json --out serves_map.json
@@ -261,7 +245,7 @@ python scripts/serves_probe.py --menu menu.json --out serves_map.json
 ⚠️ `query-meal-detail` 参数名是 `code`（不是 `productCode`），
 且必须带 `storeCode` + `beType` + `orderType`。
 
-#### 4b-2 投骰（确认通过后）
+#### 4.3 投骰（确认通过后）
 
 ```bash
 python scripts/dice_roll.py --menu menu.json --people 3 --band 50-100 \
@@ -304,19 +288,91 @@ python scripts/dice_roll.py --menu menu.json --people 3 --band 50-100 \
 ⚠️ 投掷次数由**需要几份**决定而非人数 —— 一份四人套餐喂饱四人，只投 1 次。
 ⚠️ 多份投掷时单份上限自动收紧为「档上限 / 投掷次数」，保证合计不越界。
 
-#### 4b-3 投完之后：接算价 / 下单
+#### 4.4 连投（多人各掷一次）
+
+几个人一起去、想各点各的时候用。把总预算均摊成 N 份，**每份独立掷一次骰**。
+
+```bash
+python scripts/dice_roll.py --menu menu.json --people 3 --band 50-100     --splits 3 --restriction 不吃辣 --channel 到店自取 --store 1450713     --serves-map serves_map.json
+```
+
+| 要点 | 说明 |
+|---|---|
+| 单份上限 | 档上限 ÷ 份数（3人/50-100 → 33.3 元/份）|
+| 只取单人份 | 连投不打包，每份都是一人餐 |
+| 合计必然在档内 | 每份 ≤ 均摊上限 → N 份之和 ≤ 档上限 |
+| 尽量不重复 | 池够大时每份选不同的（自动换骰面重试）|
+
+份数默认 = 人数，也可 `--splits 2`（3 个人点 2 份大餐）。
+
+**每份上限太低会如实报无解** —— 如 4 人 / 50以内（每份仅 12.5 元，买不到正餐）。
+此时改用 4.3 的默认模式（一份套餐喂多人），或提高预算。
+
+#### 4.5 免费重投
+
+掷出「豹子」或「顺子」时（合计 13.9%），给一次免费重投。
+
+```bash
+# 先保存本次结果
+python scripts/dice_roll.py ... --save-state last_roll.json
+
+# 重投，保留更便宜的（默认，替用户省钱）
+python scripts/dice_roll.py --menu menu.json --reroll last_roll.json --keep cheaper
+
+# 保留更贵的（"重投就是想要更好的"）
+python scripts/dice_roll.py --menu menu.json --reroll last_roll.json --keep higher
+```
+
+| `--keep` | 行为 |
+|---|---|
+| `cheaper`（默认）| 两次取便宜的，并报省了多少 |
+| `higher` | 两次取贵的 |
+| `new` | 直接用新结果 |
+
+⚠️ 重投**沿用上次的上下文**（门店/渠道/忌口/预算），不再走确认卡 ——
+条件没变就不该重复问一遍。
+
+#### 4.6 投完之后：接算价 / 下单
 
 投掷结果自带 `orderContext`（storeCode / channel / beType / orderType / takeWayCode），
 可直接喂给 `scenario_guard.py` → `calculate-price` → `create-order`。
-不需要重新问一遍场景参数 —— 它们在 4b-0 已经确认过了。
+不需要重新问一遍场景参数 —— 它们在 4.1 已经确认过了。
 
-#### 4b-4 用户要改信息怎么办
+#### 4.7 用户要改信息怎么办
 
 改信息 → **必须重投**，不能拿旧骰子结果套新条件。
 例：从「不吃辣」改成「不吃辣 + 不吃牛」→ 候选池变了 → 旧结果可能违规。
-直接重新走 4b-0 确认卡即可。
+直接重新走 4.1 确认卡即可。
 
 详见 `references/dice-design.md`（含 60 万次模拟的实测数据与三骰推导）。
+
+### Step 4B · 指名商品（用户明确要某个时）
+
+> 仅当用户说出具体商品/口味（"我要巨无霸套餐""来份麦辣鸡腿堡"）时走这里。
+> 其余情况一律走 Step 4 掷骰。
+
+
+**子商品编码必须从 `query-meal-detail` 的 `choices[].code` 取，不要猜** ——
+猜错会报 `60006`，很容易误判成"商品售罄"。
+
+用 `menu_helper.py` 做候选筛选与忌口过滤：
+
+```bash
+# 候选套餐（按人数）
+python scripts/menu_helper.py candidates --menu menu.json --people 3 --details det/
+
+# 忌口检查
+python scripts/menu_helper.py check --menu menu.json --plan plan.json --restriction 不吃辣 吃素 过敏
+```
+
+**忌口处理原则：尽力满足 + 显式告知。菜单无法满足时明说，并把忌口写进
+订单 `remark`，同时推荐麦当劳实际有的替代品保底。不要静默降级。**
+
+已知硬边界（详见 `references/dietary.md`）：
+
+- **菜单没有素食主餐**（唯一带"素"的是大米风味麦旋风，是甜品）
+- **特调没有"去辣"选项**，无法标注过敏原
+- 唯一含素食小食的正餐套餐是 `9900011129`「"堡"你欢乐套餐」（含苹果片）
 
 ### Step 5 · 优惠券择优
 

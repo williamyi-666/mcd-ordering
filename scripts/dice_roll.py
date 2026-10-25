@@ -679,6 +679,234 @@ def roll_triple(pool: list, triple: tuple) -> dict:
     return srt[idx]
 
 
+# ---------------------------------------------------------------- 连投
+def build_split_pool(meals: dict, band: dict, restrictions: list,
+                     splits: int, serves_map: Optional[dict] = None) -> tuple:
+    """
+    连投模式的候选池：只保留【单人份】，单份上限 = 档上限 / 投掷份数。
+
+    为什么单份下限设为 0（而不是沿用档位下限）：
+      50-100 档的 lo=50，若 2 人连投则单份上限仅 50 元，
+      lo=50 与 cap=50 会退化成"必须正好 50"甚至空池。
+      连投允许多份合计凑出档位，单份本身可以便宜。
+
+    返回 (pool, perCap)
+    """
+    hi = band["hi"]
+    per_cap = hi if hi >= 10 ** 9 else hi / max(splits, 1)
+    no_spicy = any("辣" in r or "spicy" in r.lower()
+                   for r in (restrictions or []))
+    pool = []
+    for code, v in meals.items():
+        name = v.get("name", "")
+        if not any(k in name for k in MAIN_KEYWORDS):
+            continue
+        if is_drink_only(name):
+            continue
+        if no_spicy and is_spicy(name):
+            continue
+        if serves_map and code in serves_map and serves_map[code] > 0:
+            s = int(serves_map[code])
+        else:
+            s = serves_of(name)
+        if s != 1:
+            continue                      # 连投只吃单人份
+        pr = prices_of(v)
+        if pr["pay"] <= 0 or pr["pay"] > per_cap:
+            continue
+        pool.append({
+            "kind": "套餐", "code": code, "name": name,
+            "price": pr["pay"], "total": pr["pay"], "serves": 1,
+            "perCapita": pr["pay"],
+            "listPrice": pr["listPrice"],
+            "memberPrice": pr["memberPrice"],
+            "hasDiscount": pr["hasDiscount"],
+        })
+    return pool, per_cap
+
+
+def roll_splits(meals: dict, people: int, band_raw: str, restrictions: list,
+                splits: Optional[int] = None, serves_map: Optional[dict] = None,
+                triples: Optional[list] = None, seed: Optional[int] = None,
+                channel: Optional[str] = None, store_code: Optional[str] = None,
+                defaults: Optional[dict] = None, use_defaults: bool = True,
+                require_confirm: bool = True) -> dict:
+    """
+    连投模式：把总预算均摊成 N 份，每份独立掷三骰，各选一份单人餐。
+
+    适用场景：几个人一起去、想各点各的，比"一份四人餐"更有参与感。
+    splits 默认 = people（一人一份）。
+
+    硬约束不放松：
+      - 每份价格 <= 档上限 / splits → N 份合计必然在档内
+      - 忌口在建池阶段过滤
+      - 不重复选同一份（池子够大时）
+    """
+    _defaults = defaults if defaults is not None else (
+        load_defaults() if use_defaults else {})
+    card = build_confirm_card(people=people, band=band_raw,
+                              restrictions=restrictions, channel=channel,
+                              store_code=store_code, defaults=_defaults,
+                              use_defaults=use_defaults)
+    if require_confirm and not card["ready"]:
+        return {"ok": False, "error": "need_confirm",
+                "message": "投掷前需要先确认：%s" % "、".join(card["missing"]),
+                "missing": card["missing"], "confirmCard": card,
+                "questions": card["questions"], "rolled": False}
+
+    cvals = {c["key"]: c["value"] for c in card["card"]}
+    if cvals.get("restrictions") is not None:
+        restrictions = cvals["restrictions"]
+    if cvals.get("channel"):
+        channel = cvals["channel"]
+    if cvals.get("storeCode"):
+        store_code = cvals["storeCode"]
+
+    band = normalize_band(band_raw)
+    if not band:
+        return {"ok": False, "error": "未知预算档 %r" % band_raw}
+
+    n_splits = int(splits or people or 1)
+    pool, per_cap = build_split_pool(meals, band, restrictions or [],
+                                     n_splits, serves_map)
+    if not pool:
+        return {
+            "ok": False, "error": "no_solution",
+            "message": "%d 份 × 单人份，预算「%s」下每份上限 %.1f 元，无合规单品"
+                       % (n_splits, band["label"], per_cap),
+            "band": band, "people": people, "splits": n_splits,
+            "perCap": round(per_cap, 2),
+        }
+
+    rng = random.Random(seed) if seed is not None else random
+    picks = []
+    used = set()
+    for i in range(n_splits):
+        if triples and i < len(triples):
+            t = tuple(int(x) for x in triples[i])
+        else:
+            t = tuple(rng.randint(1, 6) for _ in range(3))
+        info = triple_info(t)
+        item = None
+        for _try in range(8):
+            cand = roll_triple(pool, t)
+            if cand is None:
+                break
+            if cand["code"] not in used or len(pool) == 1:
+                item = cand
+                break
+            # 换一组骰面再试（保证不重复）
+            t = tuple(rng.randint(1, 6) for _ in range(3))
+            info = triple_info(t)
+        if item is None:
+            item = roll_triple(pool, t)
+        if item:
+            used.add(item["code"])
+            picks.append({
+                "seq": i + 1,
+                "dice": list(t), "sum": sum(t),
+                "structure": info["structure"], "label": info["label"],
+                "rerollToken": info["rerollToken"],
+                **item,
+                "contribution": item["price"],
+                "servesThis": 1,
+            })
+
+    total = round(sum(p["contribution"] for p in picks), 2)
+    ok_budget = band["hi"] >= 10 ** 9 or total <= band["hi"] + 1e-9
+    return {
+        "ok": True, "mode": "split",
+        "band": {"key": band["key"], "label": band["label"],
+                 "lo": band["lo"], "hi": band["hi"]},
+        "people": people, "splits": n_splits,
+        "perCap": round(per_cap, 2),
+        "restrictions": restrictions or [],
+        "poolSize": len(pool),
+        "rolls": len(picks),
+        "picks": picks,
+        "servesTotal": len(picks),
+        "total": total,
+        "perCapita": round(total / people, 2) if people else 0,
+        "withinBudget": ok_budget,
+        "rerollTokens": [p["label"] for p in picks if p.get("rerollToken")],
+        "confirmCard": card,
+        "orderContext": {
+            "storeCode": store_code,
+            "channel": (normalize_channel(channel) or {}).get("label"),
+            "beType": (normalize_channel(channel) or {}).get("beType"),
+            "orderType": (normalize_channel(channel) or {}).get("orderType"),
+            "beCodeNeeded": (normalize_channel(channel) or {}).get("beCodeNeeded"),
+            "people": people, "band": band["label"],
+            "restrictions": restrictions or [],
+        },
+        "note": "连投模式：每份独立掷骰，单份上限 %.1f 元" % per_cap,
+    }
+
+
+def reroll(prev: dict, meals: dict, serves_map: Optional[dict] = None,
+           triples: Optional[list] = None, seed: Optional[int] = None,
+           keep: str = "cheaper") -> dict:
+    """
+    免费重投：基于上一次结果再掷一次。
+
+    keep 决定保留哪一份：
+      cheaper（默认）—— 保留更便宜的，替用户省钱
+      higher         —— 保留更贵的（"重投就是想要更好的"）
+      new            —— 直接用新结果
+
+    只有触发「豹子 / 顺子」那一轮才该调用（rerollToken），
+    但这层判断交给调用方 —— 本函数只负责"再掷一次并给出取舍"。
+    """
+    if not prev or not prev.get("ok"):
+        return {"ok": False, "error": "no_previous_roll"}
+
+    # 用同一套上下文重投
+    band_label = prev["band"]["label"]
+    people = prev["people"]
+    restrictions = prev.get("restrictions") or []
+    ctx = prev.get("orderContext") or {}
+
+    if prev.get("splits"):
+        new = roll_splits(meals, people, band_label, restrictions,
+                          splits=prev["splits"], serves_map=serves_map,
+                          triples=triples, seed=seed,
+                          channel=ctx.get("channel"),
+                          store_code=ctx.get("storeCode"),
+                          require_confirm=False)
+    else:
+        new = roll_food(meals, people, band_label, restrictions,
+                        serves_map=serves_map, triples=triples, seed=seed,
+                        dice_mode=prev.get("mode", "triple"),
+                        channel=ctx.get("channel"),
+                        store_code=ctx.get("storeCode"),
+                        require_confirm=False)
+    if not new.get("ok"):
+        return new
+
+    old_total, new_total = prev["total"], new["total"]
+    if keep == "higher":
+        keep_new = new_total > old_total
+    elif keep == "new":
+        keep_new = True
+    else:  # cheaper
+        keep_new = new_total < old_total
+
+    return {
+        "ok": True,
+        "rerolled": True,
+        "kept": "new" if keep_new else "old",
+        "keepPolicy": keep,
+        "old": {"total": old_total,
+                "picks": [{"name": p["name"], "dice": p.get("dice"),
+                           "sum": p.get("sum")} for p in prev["picks"]]},
+        "new": {"total": new_total,
+                "picks": [{"name": p["name"], "dice": p.get("dice"),
+                           "sum": p.get("sum")} for p in new["picks"]]},
+        "result": new if keep_new else prev,
+        "saved": round(old_total - new_total, 2) if keep_new else 0,
+    }
+
+
 # ---------------------------------------------------------------- 主流程
 def roll_food(meals: dict, people: int, band_raw: str, restrictions: list,
               faces: Optional[list] = None, seed: Optional[int] = None,
@@ -937,10 +1165,17 @@ def main() -> int:
                     help="跳过投前确认（仅限脚本自检/离线演示）")
     ap.add_argument("--mode", default="triple", choices=["triple", "single"],
                     help="骰子模式：triple=三骰216级（默认）/ single=单骰6段")
+    ap.add_argument("--splits", type=int, default=0,
+                    help="连投份数：把总预算均摊成 N 份，每份独立掷骰（默认 0=不连投）")
     ap.add_argument("--faces", nargs="*", type=int, help="指定单骰点数（1-6）")
     ap.add_argument("--triples", nargs="*", help="指定三骰骰面，如 653 441")
     ap.add_argument("--serves-map", help="权威供餐人数映射 JSON（serves_map.json）")
     ap.add_argument("--seed", type=int, help="随机种子（可复现）")
+    ap.add_argument("--save-state", help="把本次结果存成 JSON（供 --reroll 用）")
+    ap.add_argument("--reroll", help="基于 --save-state 存的结果重投一次")
+    ap.add_argument("--keep", default="cheaper",
+                    choices=["cheaper", "higher", "new"],
+                    help="重投后保留哪份：cheaper=更便宜（默认）/ higher=更贵 / new=新的")
     ap.add_argument("--simulate", type=int, default=0, help="模拟次数（自检用）")
     args = ap.parse_args()
 
@@ -1021,6 +1256,33 @@ def main() -> int:
     if restrictions is not None and len(restrictions) == 0:
         restrictions = []
 
+    # ---- 重投模式：沿用上次上下文，不再走确认卡 ----
+    if args.reroll:
+        if not os.path.exists(args.reroll):
+            print("找不到上次结果文件：%s" % args.reroll, file=sys.stderr)
+            return 2
+        prev = load_json(args.reroll)
+        rr = reroll(prev, meals, serves_map=serves_map, triples=triples,
+                    seed=args.seed, keep=args.keep)
+        if not rr.get("ok"):
+            print(json.dumps(rr, ensure_ascii=False, indent=2))
+            return 1
+        print("🔁 重投（保留策略：%s）" % {"cheaper": "更便宜的",
+                                    "higher": "更贵的",
+                                    "new": "新的"}[args.keep])
+        print("  原结果  %.1f 元  %s"
+              % (rr["old"]["total"],
+                 "、".join(p["name"] for p in rr["old"]["picks"])))
+        print("  新结果  %.1f 元  %s"
+              % (rr["new"]["total"],
+                 "、".join(p["name"] for p in rr["new"]["picks"])))
+        print("  采纳    %s%s"
+              % ("新结果" if rr["kept"] == "new" else "原结果",
+                 "（省 %.1f 元）" % rr["saved"] if rr["saved"] else ""))
+        print()
+        print(json.dumps(rr, ensure_ascii=False, indent=2))
+        return 0
+
     use_defaults = not args.no_defaults
     card = build_confirm_card(
         people=args.people, band=args.band, restrictions=restrictions,
@@ -1045,17 +1307,33 @@ def main() -> int:
 
     print_confirm_card(card)
 
-    r = roll_food(meals, args.people, args.band, restrictions,
-                  faces=args.faces, seed=args.seed, dice_mode=args.mode,
-                  serves_map=serves_map, triples=triples,
-                  channel=args.channel, store_code=args.store,
-                  use_coupon=(None if not args.coupon else args.coupon == "yes"),
-                  require_confirm=False,
-                  defaults=load_defaults() if use_defaults else {},
-                  use_defaults=use_defaults)
+    # ---- 投掷：连投模式 vs 常规模式 ----
+    if args.splits and args.splits > 0:
+        r = roll_splits(meals, args.people, args.band, restrictions,
+                        splits=args.splits, serves_map=serves_map,
+                        triples=triples, seed=args.seed,
+                        channel=args.channel, store_code=args.store,
+                        require_confirm=False,
+                        defaults=load_defaults() if use_defaults else {},
+                        use_defaults=use_defaults)
+    else:
+        r = roll_food(meals, args.people, args.band, restrictions,
+                      faces=args.faces, seed=args.seed, dice_mode=args.mode,
+                      serves_map=serves_map, triples=triples,
+                      channel=args.channel, store_code=args.store,
+                      use_coupon=(None if not args.coupon else args.coupon == "yes"),
+                      require_confirm=False,
+                      defaults=load_defaults() if use_defaults else {},
+                      use_defaults=use_defaults)
     if not r["ok"]:
         print(json.dumps(r, ensure_ascii=False, indent=2))
         return 1
+
+    # 存状态供重投用
+    if args.save_state:
+        with open(args.save_state, "w", encoding="utf-8") as f:
+            json.dump(r, f, ensure_ascii=False, indent=2)
+        print("（已存状态：%s）" % args.save_state)
 
     # 记住本次信息为默认值（只存门店/渠道/忌口/用券）
     if args.remember:
@@ -1068,6 +1346,27 @@ def main() -> int:
             "useCoupon": cc.get("useCoupon"),
         })
         r["defaultsSaved"] = saved
+
+    if r.get("mode") == "split":
+        print("🎲 连投 %d 份（每份独立掷骰，单份上限 %.1f 元）"
+              % (r["splits"], r["perCap"]))
+        print("   预算档：%s   人数：%d   候选池：%d 个"
+              % (r["band"]["label"], r["people"], r["poolSize"]))
+        print()
+        for p in r["picks"]:
+            d = p["dice"]
+            print("   第%d份 【%d-%d-%d】=%d点·%-4s → %-24s %5.1f 元"
+                  % (p["seq"], d[0], d[1], d[2], p["sum"], p["structure"],
+                     p["name"][:22], p["price"]))
+        print()
+        print("   合计 %.1f 元   人均 %.1f 元   %s"
+              % (r["total"], r["perCapita"],
+                 "预算内 ✓" if r["withinBudget"] else "⚠️ 超预算"))
+        if r["rerollTokens"]:
+            print("   🎁 触发「%s」→ 可免费重投一次" % "、".join(r["rerollTokens"]))
+        print()
+        print(json.dumps(r, ensure_ascii=False, indent=2))
+        return 0
 
     if args.mode == "triple":
         print("🎲 三骰结果：%s" % "  ".join(

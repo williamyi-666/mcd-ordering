@@ -152,6 +152,55 @@ def test_integration():
     check("D4 已过期订单被拦", g3["readyToPay"] is False)
 
 
+# ================================================================ E 字段缺失
+def test_missing_fields():
+    print("\nE. 字段缺失时不能误判（实测坑）")
+    from pay_confirm import build_gate
+
+    # 到店自取订单：query-order 不返回 storeCode，只有 storeName
+    to_store = {
+        "orderStatus": "待支付", "status": "10",
+        "storeName": "麦当劳上海黄浦华旭国际大厦餐厅",
+        "expirePayTime": "2099-01-01 00:00:00",
+        "orderProductList": [{"productName": "鱼排堡开心乐园餐", "quantity": 1,
+                              "price": 24.0, "comboItemList": []}],
+        "productPrice": 24.0, "deliveryPrice": 0,
+        "realPackingFeeTotalPrice": 0, "totalDiscountAmount": 0,
+        "realTotalAmount": 24.0, "couponList": [{"x": 1}],
+        "takeWay": "堂食",
+    }
+    g = build_gate(dict(to_store), "E1", expect_store="1450713",
+                   expect_channel="到店自取")
+    check("E1 无 storeCode 时按名称核对，不误判失败",
+          g["readyToPay"] is True, str(g["blockers"]))
+    store_chk = [c for c in g["checks"] if c["item"] == "门店一致"][0]
+    check("E2 该项标记为 skipped 并给 warning",
+          store_chk.get("skipped") is True
+          and any("门店" in w for w in g["warnings"]))
+
+    # takeWay 字段（不是 deliveryInfo）
+    ch = [c for c in g["checks"] if c["item"] == "取餐方式一致"][0]
+    check("E3 取餐方式读 takeWay 字段", ch["ok"] is True
+          and "堂食" in ch["detail"], ch["detail"])
+
+    # 有 storeCode 且不匹配 → 必须拦
+    wrong = dict(to_store, storeCode="1450056")
+    g2 = build_gate(wrong, "E2", expect_store="1450713")
+    check("E4 有 storeCode 且不匹配时拦下", g2["readyToPay"] is False,
+          str(g2["blockers"])[:60])
+
+    # 取餐方式不符 → 拦
+    g3 = build_gate(dict(to_store), "E3", expect_channel="麦乐送")
+    check("E5 取餐方式不符时拦下", g3["readyToPay"] is False)
+
+    # 取餐方式字段完全缺失 → 不阻断，但给 warning
+    no_tw = {k: v for k, v in to_store.items() if k != "takeWay"}
+    g4 = build_gate(no_tw, "E4", expect_channel="到店自取")
+    ch4 = [c for c in g4["checks"] if c["item"] == "取餐方式一致"][0]
+    check("E6 取餐方式字段缺失时只告警不阻断",
+          g4["readyToPay"] is True and ch4.get("skipped") is True)
+
+
 def main():
     print("=" * 66)
     print("付款闭环回归测试（pay.py）")
@@ -160,6 +209,7 @@ def main():
     test_urls()
     test_wait()
     test_integration()
+    test_missing_fields()
 
     print("\n" + "=" * 66)
     passed = sum(1 for _, ok, _ in results if ok)

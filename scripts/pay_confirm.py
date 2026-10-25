@@ -99,7 +99,18 @@ def build_gate(dd: dict, order_id: str, expect_total: float = None,
     warnings = []
     checks = []
 
-    def chk(name, ok, detail=""):
+    def chk(name, ok, detail="", skip=False):
+        """
+        记录一项核对。
+
+        skip=True 表示「订单没返回该字段，无法核实」——
+        这种情况只记 warning，**不算阻断**：字段缺失是接口问题，不是订单错。
+        """
+        if skip:
+            checks.append({"item": name, "ok": True, "skipped": True,
+                           "detail": detail})
+            warnings.append("%s：%s（未阻断，请自行确认）" % (name, detail))
+            return True
         checks.append({"item": name, "ok": bool(ok), "detail": detail})
         if not ok:
             blockers.append("%s：%s" % (name, detail))
@@ -150,25 +161,41 @@ def build_gate(dd: dict, order_id: str, expect_total: float = None,
                   % (expect_total, total, total - expect_total)))
 
     # ---- 5. 门店一致性
+    # ⚠️ 实测：到店自取订单 query-order **不返回 storeCode**，只有 storeName。
+    #    此时无法用编码核实，只能标记为「未核实」，不能判失败。
     if expect_store:
-        hit = (expect_store in (dd.get("storeCode") or "")
-               or expect_store in store_name)
-        chk("门店一致", hit,
-            ("%s / %s" % (dd.get("storeCode"), store_name)) if hit
-            else ("预期门店 %s，订单是 %s / %s"
-                  % (expect_store, dd.get("storeCode"), store_name)))
+        sc = dd.get("storeCode") or ""
+        if sc:
+            hit = expect_store in sc or expect_store in store_name
+            chk("门店一致", hit,
+                ("%s / %s" % (sc, store_name)) if hit
+                else ("预期门店 %s，订单是 %s / %s"
+                      % (expect_store, sc, store_name)))
+        elif store_name:
+            chk("门店一致", True,
+                "订单未返回门店编码，按名称核对：%s" % store_name, skip=True)
+        else:
+            chk("门店一致", False, "订单既无门店编码也无名称，无法核实")
 
     # ---- 6. 取餐方式
+    # ⚠️ 实测字段：到店单是 `takeWay`（"堂食"/"外带"），外送单在 deliveryInfo。
     if expect_channel:
         di = dd.get("deliveryInfo") or {}
-        dtype = di.get("deliveryType") or ""
-        tway = dd.get("takeWayName") or dd.get("takeWayCode") or ""
-        text = "%s %s" % (dtype, tway)
-        hit = any(k in text for k in _channel_keys(expect_channel))
-        chk("取餐方式一致", hit,
-            (text.strip() or "-") if hit
-            else ("预期「%s」，订单是「%s」"
-                  % (expect_channel, text.strip() or "-")))
+        parts = [
+            dd.get("takeWay") or "",
+            dd.get("takeWayName") or "",
+            dd.get("takeWayCode") or "",
+            di.get("deliveryType") or "",
+            di.get("deliveryName") or "",
+        ]
+        text = " ".join(p for p in parts if p).strip()
+        if not text:
+            chk("取餐方式一致", True, "订单未返回取餐方式字段", skip=True)
+        else:
+            hit = any(k in text for k in _channel_keys(expect_channel))
+            chk("取餐方式一致", hit,
+                text if hit
+                else ("预期「%s」，订单是「%s」" % (expect_channel, text)))
 
     # ---- 7. 忌口核验（订单里带辣但用户要求不吃辣）
     if restrictions:
@@ -266,7 +293,10 @@ def print_gate(g: dict, order_id: str) -> None:
             print("  ✗ %s" % b)
         return
     for c in g["checks"]:
-        mark = "✓" if c["ok"] else "✗"
+        if c.get("skipped"):
+            mark = "－"
+        else:
+            mark = "✓" if c["ok"] else "✗"
         print("  %s %-14s %s" % (mark, c["item"], c["detail"]))
     for w in g["warnings"]:
         print("  ⚠️  %s" % w)

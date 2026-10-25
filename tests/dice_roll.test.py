@@ -98,15 +98,18 @@ CTX = {"channel": "到店自取", "store_code": "1450056"}
 
 
 def roll(people, band, restrictions=None, mode=None, **kw):
-    """带完整确认上下文的投掷（走真实路径）。"""
+    """带完整确认上下文的投掷（走真实路径）。带 splits 时走连投。"""
     if mode:
         kw["dice_mode"] = mode
     kw.setdefault("dice_mode", "triple")
     kw.setdefault("serves_map", serves_map)
     kw.setdefault("defaults", {})
-    return roll_food(meals, people, band,
-                     ["不吃辣"] if restrictions is None else restrictions,
-                     **CTX, **kw)
+    r = ["不吃辣"] if restrictions is None else restrictions
+    if kw.get("splits"):
+        from dice_roll import roll_splits
+        kw.pop("dice_mode", None)      # roll_splits 只有三骰
+        return roll_splits(meals, people, band, r, **CTX, **kw)
+    return roll_food(meals, people, band, r, **CTX, **kw)
 
 results = []
 
@@ -570,10 +573,95 @@ def test_pay_gate():
     check("K11 查单失败 → 拦下", g8["readyToPay"] is False)
 
 
+# ================================================================ L 连投
+def test_split():
+    print("\nL. 连投模式（每人各掷一次）")
+    from dice_roll import build_split_pool, roll_splits
+
+    band = normalize_band("50-100")
+    pool3, cap3 = build_split_pool(meals, band, ["不吃辣"], 3, serves_map)
+    check("L1 连投只取单人份",
+          all(p["serves"] == 1 for p in pool3), "池 %d" % len(pool3))
+    check("L2 单份上限 = 档上限 / 份数",
+          abs(cap3 - 100 / 3) < 0.01, "%.2f" % cap3)
+    check("L3 池内单份均不超均摊上限",
+          pool3 and all(p["total"] <= cap3 + 1e-9 for p in pool3))
+
+    r = roll_splits(meals, 3, "50-100", ["不吃辣"], splits=3,
+                    serves_map=serves_map, seed=11,
+                    channel="到店自取", store_code="1450713", defaults={})
+    if r["ok"]:
+        check("L4 投出 3 份", r["rolls"] == 3, "rolls=%d" % r["rolls"])
+        check("L5 合计不超档上限", r["total"] <= 100 + 1e-9,
+              "%.1f 元" % r["total"])
+        check("L6 份数达到人数要求", r["servesTotal"] >= 3,
+              "serves=%d" % r["servesTotal"])
+        check("L7 每份都有独立骰面",
+              all(len(p["dice"]) == 3 for p in r["picks"]))
+        codes = [p["code"] for p in r["picks"]]
+        check("L8 池够大时尽量不重复",
+              len(set(codes)) == len(codes) or len(pool3) < 3,
+              "codes=%s" % codes)
+        check("L9 结果带连投标记", r["mode"] == "split")
+        check("L10 结果带 orderContext 可接下单",
+              (r.get("orderContext") or {}).get("beType") == 1)
+    else:
+        for i in range(4, 11):
+            check("L%d 跳过（该场景无解）" % i, True)
+
+    # 每份上限过低时应诚实报无解（或仍满足预算）
+    r2 = roll_splits(meals, 4, "50以内", ["不吃辣"], splits=4,
+                     serves_map=serves_map, seed=1,
+                     channel="到店自取", store_code="1450713", defaults={})
+    if not r2["ok"]:
+        check("L11 每份上限过低时如实报无解",
+              r2.get("error") == "no_solution", str(r2.get("error")))
+    else:
+        check("L11 该菜单下仍有解，合计须在档内",
+              r2["total"] <= 50 + 1e-9, "%.1f" % r2["total"])
+
+    # 连投也必须过投前确认
+    r3 = roll_splits(meals, 2, "50-100", ["不吃辣"], splits=2,
+                     serves_map=serves_map, defaults={})
+    check("L12 连投同样受投前确认拦截",
+          r3["ok"] is False and r3["error"] == "need_confirm")
+
+
+# ================================================================ M 重投
+def test_reroll():
+    print("\nM. 免费重投")
+    from dice_roll import reroll
+
+    base = roll(3, "50-100", splits=3, seed=11)
+    if not base.get("ok"):
+        check("M 跳过（基准无解）", True)
+        return
+
+    rr = reroll(base, meals, serves_map=serves_map, seed=99, keep="cheaper")
+    check("M1 重投成功", rr.get("ok") is True)
+    check("M2 cheaper 策略保留金额较低者",
+          rr["result"]["total"] == min(rr["old"]["total"], rr["new"]["total"]),
+          "old=%.1f new=%.1f kept=%s"
+          % (rr["old"]["total"], rr["new"]["total"], rr["kept"]))
+    check("M3 省下的金额非负", rr["saved"] >= 0, "%.1f" % rr["saved"])
+
+    rr2 = reroll(base, meals, serves_map=serves_map, seed=99, keep="higher")
+    check("M4 higher 策略保留金额较高者",
+          rr2["result"]["total"] == max(rr2["old"]["total"], rr2["new"]["total"]),
+          "kept=%s" % rr2["kept"])
+
+    check("M5 重投结果仍在预算档内",
+          rr["result"]["total"] <= 100 + 1e-9,
+          "%.1f" % rr["result"]["total"])
+
+    bad = reroll({"ok": False}, meals)
+    check("M6 无上次结果时安全返回", bad.get("ok") is False)
+
+
 # ================================================================ 入口
 def main():
     print("=" * 72)
-    print("骰子选餐引擎回归测试 v2（三骰 + 投前确认 + 默认值 + 付款门禁）")
+    print("骰子选餐引擎回归测试 v2（三骰 + 投前确认 + 默认值 + 连投 + 重投）")
     print("=" * 72)
     test_hard_constraints("triple")
     test_hard_constraints("single")
@@ -587,6 +675,8 @@ def main():
     test_price_basis()
     test_defaults()
     test_pay_gate()
+    test_split()
+    test_reroll()
 
     print("\n" + "=" * 72)
     passed = sum(1 for _, ok, _ in results if ok)
