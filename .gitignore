@@ -1,0 +1,62 @@
+# ===== 敏感信息 =====
+# MCP Token 与账号凭证（绝不入库）
+mcp.json
+*.token
+.env
+.env.*
+!.env.example
+secrets/
+*.key
+*.pem
+credentials.json
+mcp-config.json          # 只提交 mcp-config.example.json
+
+# ===== WorkBuddy 本地数据 =====
+.workbuddy/
+!.workbuddy/memory/
+# 注意：.workbuddy/memory/ 内含本地开发日志与个人信息（收货地址/手机号），
+# 参赛仓库不应包含。如需保留开发记录请先脱敏后再放开下面的规则。
+.workbuddy/memory/
+
+# ===== 运行时产物 =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+node_modules/
+package-lock.json
+.yarn/
+.pnpm-store/
+
+# ===== 临时文件 =====
+*.tmp
+*.log
+*.swp
+*.bak
+.DS_Store
+Thumbs.db
+tmp/
+temp/
+.cache/
+
+# ===== 生成的媒体（大文件，可选）=====
+# 演示视频与图片体积较大，如需减小仓库体积可放开注释
+# docs/media/*.mp4
+# docs/media/*.png
+
+# ===== 测试产物 =====
+tests/_tmp_*
+*.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ===== 运行时生成的个人产物 =====
+# 支付二维码 / 订单确认单（含真实订单号与门店）
+支付二维码-*.png
+订单确认单-*.png
+# 本地默认值（含用户门店偏好）
+config/defaults.json
+config/pay_confirm_*.json
+config/serves_map.local.json

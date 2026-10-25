@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>McDCraft · 麦当劳方块世界</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#1A1614;
+    color:#F1EFE8;
+    font-family:"Microsoft YaHei",-apple-system,"PingFang SC",sans-serif;
+    display:flex; align-items:center; justify-content:center;
+    min-height:100vh; padding:16px;
+  }
+  /* 大屏时画布等比放大，铺满可用宽度 */
+  @media (min-width: 1000px) {
+    #stage { width:100%; }
+    canvas { width:100%; height:auto; }
+  }
+  #wrap { width:100%; max-width:1180px; }
+  header {
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px; margin-bottom:10px; flex-wrap:wrap;
+  }
+  h1 { font-size:17px; font-weight:500; letter-spacing:.5px; }
+  h1 span { color:#FFBC0D; }
+  .meta { font-size:12px; color:#B4B2A9; display:flex; gap:14px; flex-wrap:wrap; }
+  .meta b { color:#F1EFE8; font-weight:500; }
+  .btns { display:flex; gap:6px; }
+  button {
+    background:#3A3330; color:#F1EFE8; border:1px solid #55504C;
+    padding:6px 12px; border-radius:6px; font-size:12px; cursor:pointer;
+    font-family:inherit; transition:background .15s;
+  }
+  button:hover { background:#4A423E; }
+  button.primary { background:#FFBC0D; color:#1A1614; border-color:#FFBC0D; font-weight:500; }
+  button.primary:hover { background:#FFC94D; }
+  #stage {
+    position:relative; border:1px solid #55504C; border-radius:10px;
+    overflow:hidden; background:#2A2422;
+  }
+  canvas { display:block; width:100%; height:auto; image-rendering:pixelated; image-rendering:crisp-edges; }
+  #hint {
+    margin-top:10px; font-size:12px; color:#B4B2A9; line-height:1.7;
+    border-left:2px solid #FFBC0D; padding-left:10px;
+  }
+  #hint kbd {
+    background:#3A3330; border:1px solid #55504C; border-radius:3px;
+    padding:1px 5px; font-size:11px; font-family:inherit; color:#F1EFE8;
+  }
+  #toast {
+    position:absolute; left:50%; top:16px; transform:translateX(-50%);
+    background:rgba(26,22,20,.94); border:1px solid #FFBC0D; color:#FFBC0D;
+    padding:7px 16px; border-radius:20px; font-size:13px; font-weight:500;
+    opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap;
+  }
+  #toast.show { opacity:1; }
+  .overlay {
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px;
+    background:rgba(26,22,20,.93); text-align:center; padding:20px;
+  }
+  .overlay h2 { font-size:21px; font-weight:500; }
+  .overlay p { font-size:13px; color:#B4B2A9; line-height:1.7; max-width:420px; }
+  .overlay .row { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .target {
+    display:flex; gap:16px; justify-content:center; flex-wrap:wrap;
+    background:#332C29; border:1px solid #4A423E; border-radius:8px;
+    padding:10px 16px; margin-bottom:10px; font-size:13px;
+  }
+  .target span { display:flex; align-items:center; gap:6px; }
+  .sw { width:13px; height:13px; border-radius:2px; display:inline-block; }
+  .hidden { display:none !important; }
+  /* 录制/演示模式：隐藏底部操作说明 */
+  body.demo-mode #hint { display:none; }
+  body.demo-mode { padding:8px; }
+  body.demo-mode #wrap { max-width:1320px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <h1>McDCraft <span>· 麦当劳方块世界</span></h1>
+    <div class="meta">
+      <span>关卡 <b id="lvTxt">1</b></span>
+      <span>分数 <b id="scTxt">0</b></span>
+      <span>最高 <b id="hiTxt">0</b></span>
+      <span>时间 <b id="tmTxt">60</b>s</span>
+    </div>
+    <div class="btns">
+      <button id="btnPause">暂停</button>
+      <button id="btnRestart">重开</button>
+      <button id="btnExit">退出游戏</button>
+    </div>
+  </header>
+
+  <div id="stage">
+    <canvas id="cv" width="880" height="440"></canvas>
+    <div id="toast"></div>
+
+    <div id="ovStart" class="overlay">
+      <h2>欢迎来到 McDCraft</h2>
+      <p>在麦当劳的方块世界里奔跑，收集可乐、汉堡、薯条等食材。<br>
+         躲开可恶的「倒垃圾工」，在时间结束前完成关卡目标。</p>
+      <div class="row">
+        <button class="primary" id="btnStart">开始游戏</button>
+      </div>
+    </div>
+
+    <div id="ovWin" class="overlay hidden">
+      <h2>关卡完成！</h2>
+      <p id="winTxt"></p>
+      <div class="row">
+        <button class="primary" id="btnNext">下一关</button>
+        <button id="btnMenu2">返回首页</button>
+      </div>
+    </div>
+
+    <div id="ovLose" class="overlay hidden">
+      <h2>时间到</h2>
+      <p id="loseTxt"></p>
+      <div class="row">
+        <button class="primary" id="btnRetry">再试一次</button>
+        <button id="btnMenu3">返回首页</button>
+      </div>
+    </div>
+
+    <div id="ovPause" class="overlay hidden">
+      <h2>已暂停</h2>
+      <p>按 Esc 或点「继续」回到游戏</p>
+      <div class="row">
+        <button class="primary" id="btnResume">继续</button>
+        <button id="btnMenu4">返回首页</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="target" class="target"></div>
+
+  <div id="hint" class="demo-hide">
+    <kbd>←</kbd><kbd>→</kbd> 移动　<kbd>空格</kbd> 跳跃　<kbd>Esc</kbd> 暂停<br>
+    集齐 3 个相同食材可<b style="color:#FFBC0D">合成升级版</b>（加分更多）。存档自动保存在本机，随时关掉再回来也能继续。
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// ---------- 配置 ----------
+var W=880, H=440, TILE=24, SAVE_KEY="mcdcraft_save_v1";
+
+// 麦当劳品牌色
+var COL={
+  coke:"#4A1B0C", bun:"#FAC775", beef:"#993C1D", lettuce:"#639922",
+  tomato:"#E24B4A", cheese:"#EF9F27", fry:"#FAC775", chicken:"#D85A30",
+  cream:"#F1EFE8", coffee:"#5F5E5A", corn:"#EF9F27", apple:"#E24B4A",
+  grass:"#3B6D11", dirt:"#5F5E5A", stone:"#888780", sky:"#2A2422",
+  worker:"#D4537E", gold:"#FFBC0D"
+};
+
+// 食材定义
+var FOODS=[
+  {id:"cola",  name:"可乐",   color:COL.coke,   score:10},
+  {id:"burger",name:"汉堡",   color:COL.beef,   score:15},
+  {id:"fries", name:"薯条",   color:COL.fry,    score:10},
+  {id:"chick", name:"炸鸡",   color:COL.chicken,score:12},
+  {id:"pie",   name:"派",     color:COL.cheese, score:10},
+  {id:"corn",  name:"玉米杯", color:COL.corn,   score:8},
+  {id:"coffee",name:"奶铁",   color:COL.coffee, score:12},
+  {id:"ice",   name:"麦旋风", color:COL.cream,  score:10}
+];
+// 合成升级表：3个 -> 1个高级
+var MERGE={
+  cola:{id:"coke2",name:"大杯可乐",color:COL.coke,score:40},
+  fries:{id:"fries2",name:"大薯条",color:COL.fry,score:38},
+  burger:{id:"burger2",name:"双层堡",color:COL.beef,score:50},
+  chick:{id:"chick2",name:"全家桶",color:COL.chicken,score:45}
+};
+var MERGE_FOOD={coke2:{id:"coke2",name:"大杯可乐",color:COL.coke,score:40},
+  fries2:{id:"fries2",name:"大薯条",color:COL.fry,score:38},
+  burger2:{id:"burger2",name:"双层堡",color:COL.beef,score:50},
+  chick2:{id:"chick2",name:"全家桶",color:COL.chicken,score:45}};
+
+// 背景装饰（体素方块）
+var bgBlocks=[];
+
+// ---------- 状态 ----------
+var cv=document.getElementById("cv"), ctx=cv.getContext("2d");
+ctx.imageSmoothingEnabled=false;
+
+var state="idle"; // idle|play|pause|win|lose
+var level=1, score=0, hi=0, timeLeft=60, timeMax=60;
+var items=[], particles=[], enemies=[], platforms=[], target=[];
+var player={x:60,y:300,vx:0,vy:0,w:18,h:26,onGround:false,face:1,inv:0};
+var keys={}, bag={}, combo=0, comboT=0, frames=0, tick=0;
+var groundY=372;
+
+// ---------- 工具 ----------
+function rnd(a,b){ return a+Math.random()*(b-a); }
+function ri(a,b){ return Math.floor(rnd(a,b+1)); }
+function pick(arr){ return arr[ri(0,arr.length-1)]; }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function toast(msg){
+  var t=document.getElementById("toast");
+  t.textContent=msg; t.classList.add("show");
+  clearTimeout(t._tm); t._tm=setTimeout(function(){t.classList.remove("show");},1600);
+}
+function fmtTime(s){ var m=Math.floor(s/60), ss=Math.floor(s%60); return m+":"+(ss<10?"0":"")+ss; }
+
+// ---------- 存档 ----------
+function loadSave(){
+  try{
+    var raw=localStorage.getItem(SAVE_KEY);
+    if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+function writeSave(){
+  try{
+    // hi = 历史最高分；best = 上次成绩；level = 到达的最高关卡
+    if(score>hi) hi=score;
+    localStorage.setItem(SAVE_KEY, JSON.stringify({
+      hi: hi, best: score, level: level
+    }));
+  }catch(e){}
+}
+
+// ---------- 关卡生成 ----------
+function buildLevel(){
+  items=[]; particles=[]; enemies=[]; platforms=[]; target=[]; bag={}; combo=0;
+  timeMax = 45 + Math.min(level*3, 27);
+  timeLeft = timeMax;
+
+  // 背景体素
+  bgBlocks=[];
+  for(var i=0;i<46;i++){
+    bgBlocks.push({x:ri(0,W), y:ri(30,groundY-40), s:ri(10,26),
+      c:pick([COL.stone,"#3A3330","#463C38"]), a:rnd(0.12,0.3)});
+  }
+
+  // 平台（⭐ 互不重叠：避免高平台的食材被矮平台挡住）
+  var pc = 2 + Math.min(level, 5);
+  var tries = 0;
+  while(platforms.length < pc && tries < 60){
+    tries++;
+    var pw = ri(3,5)*TILE;
+    var candX = ri(TILE*2, W-pw-TILE*2);
+    var candY = groundY - TILE - ri(2, 26);   // 矮台阶：离地 26~50px，可直接走上去
+    var overlap = false;
+    for(var q=0;q<platforms.length;q++){
+      var qp = platforms[q];
+      // 水平有重叠 且 垂直有重叠 -> 拒绝
+      if(candX < qp.x+qp.w && candX+pw > qp.x &&
+         Math.abs(candY - qp.y) < TILE){ overlap=true; break; }
+    }
+    if(!overlap) platforms.push({x:candX, y:candY, w:pw, h:TILE});
+  }
+  // 保证第一个平台不难跳到
+  platforms.sort(function(a,b){return a.y-b.y;});
+  if(platforms.length){
+    platforms[0].x = ri(TILE*3, W/2);
+    platforms[0].y = groundY - TILE*2;
+    platforms[0].w = TILE*5;
+  }
+
+  // 关卡目标：3 种食材，各需 N 个
+  var pool = FOODS.slice();
+  var need = Math.min(2 + Math.floor(level/2), 5);
+  var tn = 3;
+  for(var t=0;t<tn;t++){
+    var f = pool.splice(ri(0,pool.length-1),1)[0];
+    target.push({id:f.id,name:f.name,color:f.color,need:need,got:0});
+  }
+
+  // 食材生成
+  var total = 14 + level*4;
+  for(var k=0;k<total;k++){
+    var ff = pick(FOODS);
+    var onPlat = Math.random()<0.45 && platforms.length>0;
+    var pl = onPlat ? pick(platforms) : null;
+    var ix = pl ? pl.x+ri(10,Math.max(11,pl.w-30)) : ri(TILE, W-TILE*2);
+    var iy = pl ? pl.y-TILE+4 : ri(groundY-118, groundY-TILE*2);
+    // ⭐ 校验：平台上食材不能与其它平台重叠（否则会被挡住）
+    if(pl){
+      for(var vp=0; vp<platforms.length; vp++){
+        var vpp = platforms[vp];
+        if(vpp===pl) continue;
+        if(ix+16 > vpp.x && ix < vpp.x+vpp.w &&
+           (iy+16) > vpp.y-4 && (iy+16) < vpp.y+vpp.h+4){
+          pl = null; break;
+        }
+      }
+      if(!pl) iy = ri(groundY-118, groundY-TILE*2);
+    }
+    items.push({
+      id:ff.id, name:ff.name, color:ff.color, score:ff.score,
+      x: ix, y: iy,
+      w:16, h:16, bob:rnd(0,6), vy:0, onPlat: pl
+    });
+  }
+
+  // ⭐ 修正：确保每个食材都可达
+  // 平台正下方是"死区"——玩家站在地面会被平台挡住，跳起来也撞到平台底面。
+  // 因此：地面食材若水平位置落在某平台范围内，必须横向挪出该平台。
+  for(var mi=0; mi<items.length; mi++){
+    var mt = items[mi];
+    if(mt.onPlat) continue;              // 平台上的食材另行处理
+    var moved = false;
+    for(var pi=0; pi<platforms.length && !moved; pi++){
+      var pp = platforms[pi];
+      if(mt.x+16 > pp.x && mt.x < pp.x+pp.w){
+        // 挪到平台左侧（留出间距）
+        var leftX = pp.x - 20 - 16;
+        if(leftX >= TILE) mt.x = leftX;
+        else mt.x = pp.x + pp.w + 4;      // 左侧放不下就放右侧
+        moved = true;
+      }
+    }
+    if(moved){
+      mt.x = Math.max(TILE, Math.min(mt.x, W-TILE*2));
+      mt.y = groundY - TILE*2 - ri(0, 30);
+    }
+  }
+  // 平台上的食材：确保它所在平台的上方没有别的平台遮挡
+  for(var mi2=0; mi2<items.length; mi2++){
+    var m2 = items[mi2];
+    if(!m2.onPlat) continue;
+    var bad = false;
+    for(var pi2=0; pi2<platforms.length; pi2++){
+      var pp2 = platforms[pi2];
+      if(pp2 === m2.onPlat) continue;
+      if(m2.x+16 > pp2.x && m2.x < pp2.x+pp2.w &&
+         (m2.y+16) > pp2.y-6 && (m2.y+16) < pp2.y+pp2.h+6){
+        bad = true; break;
+      }
+    }
+    if(bad){
+      m2.onPlat = null;
+      m2.y = groundY - TILE*2 - ri(0, 30);
+    }
+  }
+
+  // 敌人
+  var ec = Math.min(1 + Math.floor(level/2), 4);
+  for(var e=0;e<ec;e++){
+    enemies.push({
+      x: rnd(W*0.4, W-50), y: groundY-26, w:20, h:26, vy:0,
+      vx: rnd(-0.5,0.5)*(rnd(0.5,1.1)), dir:1,
+      w1: ri(0,2)===0 // 是否巡逻型
+    });
+  }
+
+  renderTarget();
+}
+
+// ---------- 碰撞 ----------
+function rectHit(a,b){
+  return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+}
+function solidAt(x,y){
+  if(y+TILE >= groundY && y+TILE <= groundY+TILE) return true;
+  for(var i=0;i<platforms.length;i++){
+    var p=platforms[i];
+    if(x+TILE>p.x && x<p.x+p.w && y+TILE>p.y && y<p.y+p.h) return true;
+  }
+  return false;
+}
+
+// ---------- 更新 ----------
+function update(){
+  frames++; tick++;
+
+  // 计时
+  timeLeft -= 1/60;
+  if(timeLeft<=0){ timeLeft=0; endGame(false); return; }
+
+  // 玩家
+  var acc=0.42, maxSp=3.4;
+  if(keys["ArrowLeft"]||keys["a"]){ player.vx-=acc; player.face=-1; }
+  if(keys["ArrowRight"]||keys["d"]){ player.vx+=acc; player.face=1; }
+  player.vx*=0.86;
+  player.vx=clamp(player.vx,-maxSp,maxSp);
+
+  if((keys[" "]||keys["ArrowUp"]) && player.onGround){
+    player.vy=-9.6; player.onGround=false;
+  }
+  player.vy+=0.50;
+  if(player.vy>11) player.vy=11;
+
+  var nx=player.x+player.vx;
+  if(nx<0){ nx=0; player.vx=0; }
+  if(nx>W-player.w){ nx=W-player.w; player.vx=0; }
+  player.x=nx;
+
+  var ny=player.y+player.vy;
+  player.onGround=false;
+  if(player.vy>=0){
+    // 下落
+    if(solidAt(player.x, ny+player.h/2) || (ny+player.h>=groundY && ny+player.h<=groundY+TILE)){
+      if(ny+player.h>=groundY && ny+player.h<=groundY+TILE){
+        player.y=groundY-player.h;
+      } else {
+        // 落到平台上
+        var landed=false;
+        for(var i=0;i<platforms.length;i++){
+          var p=platforms[i];
+          if(player.x+player.w>p.x && player.x<p.x+p.w &&
+             player.y+player.h<=p.y+4 && player.y+player.h>=p.y-6){
+            player.y=p.y-player.h; landed=true; break;
+          }
+        }
+        if(!landed) player.y=ny;
+      }
+      player.vy=0; player.onGround=true;
+    } else {
+      player.y=ny;
+    }
+  } else {
+    player.y=ny;
+    // 头顶撞到平台
+    for(var j=0;j<platforms.length;j++){
+      var q=platforms[j];
+      if(player.x+player.w>q.x && player.x<q.x+q.w &&
+         player.y<q.y+q.h && player.y+player.h>q.y+q.h){
+        player.y=q.y+q.h; player.vy=0;
+      }
+    }
+  }
+  if(player.y>H){ player.y=H-player.h; player.vy=0; }
+  if(player.inv>0) player.inv-=1/60;
+
+  // 连击衰减
+  if(comboT>0){ comboT-=1/60; if(comboT<=0) combo=0; }
+
+  // 食材
+  for(var i=items.length-1;i>=0;i--){
+    var it=items[i];
+    it.bob+=0.05;
+    if(it.onPlat && it.vy===0){
+      var ny2=it.y+Math.sin(it.bob)*2;
+      it.y=ny2;
+    }
+    if(rectHit(player,it)){
+      items.splice(i,1);
+      var sc=it.score*(1+combo*0.2);
+      score+=Math.round(sc);
+      combo++; comboT=2.2;
+      burst(it.x+8,it.y+8,it.color,10);
+      // 目标计数
+      for(var t=0;t<target.length;t++){
+        if(target[t].id===it.id){ target[t].got++; renderTarget(); break; }
+      }
+      // 合成检测
+      bag[it.id]=(bag[it.id]||0)+1;
+      if(bag[it.id]>=3 && MERGE[it.id]){
+        bag[it.id]=0;
+        var m=MERGE[it.id];
+        score+=m.score;
+        burst(player.x+9,player.y+13,COL.gold,18);
+        toast("合成 "+m.name+"！+"+m.score);
+      }
+    }
+  }
+
+  // 敌人
+  for(var e=0;e<enemies.length;e++){
+    var en=enemies[e];
+    en.x+=en.vx*en.dir;
+    if(en.x<0||en.x>W-en.w){ en.dir*=-1; en.vy=rnd(-2,2); }
+    // 重力 + 落地约束（敌人只在地面线附近活动）
+    en.vy+=0.3;
+    en.y+=en.vy;
+    if(en.y>groundY-en.h){ en.y=groundY-en.h; en.vy=0; }
+    if(en.y<groundY-en.h-40){ en.vy=0; en.y=groundY-en.h; }  // 防止飞出上方
+    if(rectHit(player,en) && player.inv<=0){
+      player.inv=1.4;
+      player.vy=-5; player.vx=-player.face*3;
+      combo=0;
+      score=Math.max(0, score-5);   // 撞击扣分
+      toast("被倒垃圾工撞到了！-5 分");
+    }
+  }
+
+  // 粒子
+  for(var p=particles.length-1;p>=0;p--){
+    var pt=particles[p];
+    pt.x+=pt.vx; pt.y+=pt.vy; pt.vy+=0.18; pt.life-=0.04;
+    if(pt.life<=0) particles.splice(p,1);
+  }
+
+  // 完成判定
+  var allGot=true;
+  for(var q2=0;q2<target.length;q2++){ if(target[q2].got<target[q2].need){ allGot=false; break; } }
+  if(allGot) endGame(true);
+}
+
+function burst(x,y,color,n){
+  for(var i=0;i<n;i++){
+    particles.push({x:x,y:y,vx:rnd(-2.4,2.4),vy:rnd(-3,1),life:1,c:color,s:ri(3,6)});
+  }
+}
+
+// ---------- 渲染 ----------
+function px(x,y,w,h,color){
+  ctx.fillStyle=color;
+  ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));
+}
+
+function drawScene(){
+  // 天空
+  ctx.fillStyle=COL.sky; ctx.fillRect(0,0,W,H);
+  // 远景体素
+  for(var i=0;i<bgBlocks.length;i++){
+    var b=bgBlocks[i];
+    ctx.globalAlpha=b.a; px(b.x,b.y,b.s,b.s,b.c); ctx.globalAlpha=1;
+  }
+  // 地面
+  px(0,groundY,W,H-groundY,COL.dirt);
+  px(0,groundY,W,5,COL.grass);
+  // 地面纹理
+  for(var g=0;g<W;g+=TILE){
+    px(g+4,groundY+9,5,5,"#4A423E");
+    if((g/TILE)%3===0) px(g+12,groundY+20,4,4,"#4A423E");
+  }
+  // 平台
+  for(var p=0;p<platforms.length;p++){
+    var pl=platforms[p];
+    px(pl.x,pl.y,pl.w,pl.h,COL.stone);
+    px(pl.x,pl.y,pl.w,4,"#B4B2A9");
+    for(var t2=0;t2<pl.w;t2+=TILE) px(pl.x+t2+4,pl.y+8,5,5,"#5F5E5A");
+  }
+  // 食材
+  for(var f=0;f<items.length;f++){
+    var it=items[f];
+    var yy=it.y+Math.sin(it.bob)*2;
+    drawFood(it.x,it.y,it.color,it.id);
+  }
+  // 敌人：倒垃圾工
+  for(var e=0;e<enemies.length;e++){
+    var en=enemies[e];
+    px(en.x,en.y,en.w,en.h,COL.worker);
+    px(en.x+2,en.y+3,6,5,"#F1EFE8");
+    px(en.x+12,en.y+3,6,5,"#F1EFE8");
+    px(en.x+5,en.y+3,3,3,"#2C2C2A");
+    px(en.x+12,en.y+3,3,3,"#2C2C2A");
+    px(en.x+4,en.y+12,12,2,"#4B1528");
+    px(en.x,en.y+en.h,en.w,4,"#993556");
+    // 手推车
+    px(en.x-14,en.y+en.h-8,14,10,"#888780");
+    px(en.x-14,en.y+en.h-8,14,3,"#B4B2A9");
+  }
+  // 玩家：方块小店员
+  if(player.inv<=0 || Math.floor(frames/4)%2===0){
+    var px0=player.x, py0=player.y;
+    px(px0+2,py0,14,9,"#F1EFE8");          // 头
+    px(px0+3,py0+3,3,3,"#2C2C2A");         // 眼
+    px(px0+10,py0+3,3,3,"#2C2C2A");
+    px(px0+1,py0+9,16,10,"#E24B4A");       // 身体
+    px(px0+1,py0+9,16,3,"#FAECE7");
+    px(px0,py0+19,6,7,"#185FA5");          // 腿
+    px(px0+12,py0+19,6,7,"#185FA5");
+    px(px0-2,py0+11,4,7,"#F1EFE8");        // 手
+    px(px0+16,py0+11,4,7,"#F1EFE8");
+    // 小红帽
+    px(px0+4,py0-4,10,4,"#E24B4A");
+  }
+  // 粒子
+  for(var p2=0;p2<particles.length;p2++){
+    var pt=particles[p2];
+    ctx.globalAlpha=Math.max(0,pt.life);
+    px(pt.x,pt.y,pt.s,pt.s,pt.c);
+    ctx.globalAlpha=1;
+  }
+  // 计时条
+  var ratio=Math.max(0,timeLeft/timeMax);
+  px(0,0,W,4,"#3A3330");
+  px(0,0,W*ratio,4, ratio<0.2 ? "#E24B4A" : COL.gold);
+}
+
+function drawFood(x,y,color,id){
+  if(id==="cola"){
+    px(x+3,y,10,14,"#5F5E5A"); px(x+3,y,10,3,"#D4537E");
+    px(x+4,y+3,8,8,"#4A1B0C");
+  }else if(id==="burger"){
+    px(x+2,y+2,12,3,"#FAC775"); px(x+1,y+5,14,3,"#639922");
+    px(x+2,y+8,12,4,"#993C1D"); px(x+2,y+12,12,3,"#FAC775");
+  }else if(id==="fries"){
+    px(x+1,y+2,14,3,"#FAC775"); px(x+2,y+5,3,10,"#FAC775");
+    px(x+6,y+5,3,11,"#FAC775"); px(x+10,y+5,3,10,"#FAC775");
+    px(x+1,y+9,14,7,"#E24B4A");
+  }else if(id==="chick"){
+    px(x+2,y+3,12,11,"#D85A30"); px(x+4,y+1,8,3,"#FAC775");
+    px(x+5,y+6,3,3,"#F1EFE8");
+  }else if(id==="pie"){
+    px(x+1,y+4,14,10,"#EF9F27"); px(x+3,y+2,10,3,"#FAC775");
+  }else if(id==="corn"){
+    px(x+2,y+3,12,11,"#EF9F27"); px(x+3,y+5,3,3,"#FAC775");
+    px(x+8,y+8,3,3,"#FAC775");
+  }else if(id==="coffee"){
+    px(x+3,y+2,10,12,"#5F5E5A"); px(x+4,y+4,8,6,"#FAC775");
+  }else{
+    px(x+2,y+2,12,12,"#F1EFE8"); px(x+4,y+4,3,3,"#888780");
+    px(x+9,y+4,3,3,"#888780");
+  }
+}
+
+function renderTarget(){
+  var el=document.getElementById("target");
+  var html="";
+  for(var i=0;i<target.length;i++){
+    var t=target[i];
+    html+='<span><span class="sw" style="background:'+t.color+'"></span>'+
+          t.name+' <b style="color:'+(t.got>=t.need?COL.gold:"#F1EFE8")+'">'+
+          t.got+'/'+t.need+'</b></span>';
+  }
+  el.innerHTML=html;
+}
+
+function updateHUD(){
+  document.getElementById("lvTxt").textContent=level;
+  document.getElementById("scTxt").textContent=score;
+  document.getElementById("hiTxt").textContent=hi;
+  document.getElementById("tmTxt").textContent=Math.ceil(timeLeft);
+}
+
+// ---------- 流程 ----------
+function startGame(){
+  var s=loadSave();
+  if(s){ hi=s.hi||0; }
+  level=1; score=0;
+  buildLevel();
+  player.x=60; player.y=groundY-player.h; player.vx=0; player.vy=0; player.inv=0;
+  state="play";
+  showOverlay(null);
+  toast("第 1 关 · 收集目标食材");
+}
+
+function endGame(win){
+  state = win?"win":"lose";
+  if(score>hi){ hi=score; }
+  writeSave();
+  if(win){
+    document.getElementById("winTxt").innerHTML=
+      '用时 '+fmtTime(timeMax-timeLeft)+' · 得分 <b style="color:#FFBC0D">'+score+'</b><br>'+
+      '剩余时间已折算为额外分数 '+Math.round(timeLeft*5)+' 分。';
+    showOverlay("ovWin");
+  }else{
+    var need="";
+    for(var i=0;i<target.length;i++){ need+=target[i].name+" "+target[i].got+"/"+target[i].need+"　"; }
+    document.getElementById("loseTxt").innerHTML=
+      '本关得分 <b style="color:#FFBC0D">'+score+'</b><br>还差：'+need;
+    showOverlay("ovLose");
+  }
+  updateHUD();
+}
+
+function nextLevel(){
+  level++; score=0;
+  buildLevel();
+  player.x=60; player.y=groundY-player.h; player.vx=0; player.vy=0; player.inv=0;
+  state="play";
+  showOverlay(null);
+  toast("第 "+level+" 关");
+}
+
+function togglePause(){
+  if(state==="play"){ state="pause"; showOverlay("ovPause"); }
+  else if(state==="pause"){ state="play"; showOverlay(null); }
+}
+
+function showOverlay(id){
+  var ids=["ovStart","ovWin","ovLose","ovPause"];
+  for(var i=0;i<ids.length;i++){
+    document.getElementById(ids[i]).classList.toggle("hidden", ids[i]!==id);
+  }
+}
+
+// ---------- 事件 ----------
+document.addEventListener("keydown",function(e){
+  keys[e.key]=true; keys[e.key.toLowerCase()]=true;
+  if(e.key===" "||e.key==="ArrowUp"||e.key==="ArrowDown"||e.key==="ArrowLeft"||e.key==="ArrowRight") e.preventDefault();
+  if(e.key==="Escape"){ togglePause(); }
+  if(e.key===" " && state==="idle"){ startGame(); }
+});
+document.addEventListener("keyup",function(e){
+  keys[e.key]=false; keys[e.key.toLowerCase()]=false;
+});
+window.addEventListener("blur",function(){ keys={}; if(state==="play") togglePause(); });
+
+document.getElementById("btnStart").onclick=startGame;
+document.getElementById("btnRetry").onclick=startGame;
+document.getElementById("btnNext").onclick=nextLevel;
+document.getElementById("btnRestart").onclick=startGame;
+document.getElementById("btnPause").onclick=togglePause;
+document.getElementById("btnResume").onclick=togglePause;
+document.getElementById("btnExit").onclick=function(){
+  writeSave();
+  window.close();
+  // 浏览器禁止 window.close 时，退回到提示
+  setTimeout(function(){
+    document.getElementById("hint").innerHTML=
+      "已保存进度，直接关闭这个标签页即可退出。下次回来点「开始游戏」会读取最高分记录。";
+  },100);
+};
+document.getElementById("btnMenu2").onclick=function(){ state="idle"; showOverlay("ovStart"); };
+document.getElementById("btnMenu3").onclick=function(){ state="idle"; showOverlay("ovStart"); };
+document.getElementById("btnMenu4").onclick=function(){ state="idle"; showOverlay("ovStart"); };
+
+// ---------- 调试接口 ----------
+// 供自动化测试 / 演示录制使用。只读状态，不改变游戏逻辑。
+window.__MCD_DEBUG__ = {
+  getPlayer: function(){ return {x:player.x, y:player.y, w:player.w, h:player.h,
+                                  vx:player.vx, vy:player.vy, onGround:player.onGround}; },
+  getItems: function(){ return items.map(function(it){
+      return {id:it.id, name:it.name, x:it.x, y:it.y, score:it.score}; }); },
+  getEnemies: function(){ return enemies.map(function(e){ return {x:e.x, y:e.y}; }); },
+  getPlatforms: function(){ return platforms.map(function(p){ return {x:p.x, y:p.y, w:p.w, h:p.h}; }); },
+  getTarget: function(){ return target.map(function(t){
+      return {id:t.id, name:t.name, need:t.need, got:t.got, color:t.color}; }); },
+  getScore: function(){ return score; },
+  getLevel: function(){ return level; },
+  getTimeLeft: function(){ return timeLeft; },
+  getState: function(){ return state; },
+  getBag: function(){ return bag; },
+  getHi: function(){ return hi; },
+  start: function(){ startGame(); }
+};
+
+// ---------- 主循环 ----------
+function loop(){
+  if(state==="play"){ update(); }
+  drawScene();
+  updateHUD();
+  requestAnimationFrame(loop);
+}
+
+// 初始
+(function init(){
+  // 录制/演示模式：URL 带 ?demo=1
+  if(typeof location!=='undefined' && /[?&]demo=1/.test(location.search)){
+    document.body.classList.add('demo-mode');
+  }
+  var s=loadSave();
+  if(s){ hi=s.hi||0; }
+  // 预览场景
+  buildLevel();
+  player.x=60; player.y=groundY-player.h;
+  updateHUD();
+  showOverlay("ovStart");
+  loop();
+})();
+
+})();
+</script>
+</body>
+</html>

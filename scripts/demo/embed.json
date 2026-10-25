@@ -1,0 +1,215 @@
+{
+ "all216": "111112121211122212221113131311222123132213231312321114141411223232322133313331124142214241412421115151511233323332224242422134143314341413431125152215251512521116161611333234243324342423432144414441225252522135153315351513531126162216261612621334343433244424442235253325352523532145154415451514541226262622136163316361613631344434443335353533245254425452524542155515551236263326362623632146164416461614641444345354435453534543255525552336363633246264426462624642156165516561615651445454544355535553346364436463634643256265526562625652166616661455545554446464644356365536563635653266626662555456465546564645654366636663556565655466646664566656665666",
+ "pool": [
+  {
+   "code": "9900016076",
+   "name": "“我就喜欢”鸡薯双全盒",
+   "total": 15.9,
+   "listPrice": 28.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900011126",
+   "name": "酥脆无双套餐",
+   "total": 20.0,
+   "listPrice": 20.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900015602",
+   "name": "大堡口福三件套",
+   "total": 22.9,
+   "listPrice": 47.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005422",
+   "name": "汉堡开心乐园餐",
+   "total": 23.5,
+   "listPrice": 23.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005421",
+   "name": "鱼排堡开心乐园餐",
+   "total": 24.0,
+   "listPrice": 24.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900004835",
+   "name": "麦乐鸡套餐",
+   "total": 25.0,
+   "listPrice": 37.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005423",
+   "name": "麦乐鸡开心乐园餐",
+   "total": 25.0,
+   "listPrice": 25.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005449",
+   "name": "吉士汉堡包套餐",
+   "total": 26.0,
+   "listPrice": 38.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900016073",
+   "name": "龙焰鸡腿堡三件套",
+   "total": 26.9,
+   "listPrice": 47.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005453",
+   "name": "麦香鸡套餐",
+   "total": 28.0,
+   "listPrice": 40.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900011128",
+   "name": "“堡”你欢乐套餐",
+   "total": 28.0,
+   "listPrice": 42.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900016075",
+   "name": "龙焰芝士棒鸡腿堡三件套",
+   "total": 29.9,
+   "listPrice": 50.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005460",
+   "name": "麦香鱼套餐",
+   "total": 33.5,
+   "listPrice": 46.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005464",
+   "name": "双层吉士汉堡套餐",
+   "total": 34.0,
+   "listPrice": 46.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005462",
+   "name": "板烧鸡腿堡三件套",
+   "total": 34.5,
+   "listPrice": 47.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900004064",
+   "name": "精选单人餐三件套",
+   "total": 34.5,
+   "listPrice": 46.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005413",
+   "name": "双层深海鳕鱼堡三件套",
+   "total": 35.0,
+   "listPrice": 47.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900009245",
+   "name": "牛气满满套餐",
+   "total": 35.0,
+   "listPrice": 47.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005468",
+   "name": "培根蔬萃双层牛堡三件套",
+   "total": 35.5,
+   "listPrice": 48.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900011121",
+   "name": "“苹”水相“鱼”套餐",
+   "total": 36.0,
+   "listPrice": 54.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005466",
+   "name": "巨无霸三件套",
+   "total": 36.5,
+   "listPrice": 49.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005411",
+   "name": "不素之霸双层牛堡三件套",
+   "total": 37.5,
+   "listPrice": 50.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900009242",
+   "name": "“苹板”支撑Pro套餐",
+   "total": 39.5,
+   "listPrice": 53.5,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005430",
+   "name": "芝士安格斯厚牛堡三件套",
+   "total": 42.5,
+   "listPrice": 55.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  },
+  {
+   "code": "9900005428",
+   "name": "培根安格斯厚牛堡三件套",
+   "total": 45.5,
+   "listPrice": 58.0,
+   "memberPrice": null,
+   "kind": "套餐"
+  }
+ ],
+ "meta": {
+  "people": 1,
+  "band": "50以内",
+  "store": "1450713",
+  "storeName": "麦当劳上海黄浦华旭国际大厦餐厅",
+  "channel": "到店自取",
+  "restrictions": [
+   "不吃辣"
+  ]
+ }
+}
