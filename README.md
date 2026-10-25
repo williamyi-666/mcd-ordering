@@ -1,11 +1,11 @@
-# mcd-ordering · 麦当劳一句话点餐 Skill
+# 麦麦 mcd-ordering · 麦当劳骰子点餐 Skill
 
 > 说出人数、忌口和预算，**掷三颗骰子**决定今天吃什么 —— 自动完成
 > 定位门店 → 领券 → 选餐 → 用券 → 校验 → 算价 → 下单 → 付款。
 
 [![参赛作品](https://img.shields.io/badge/麦当劳程序员节-参赛作品-DA291C)](https://github.com/M-China/mcd-developer-innovation-challenge/issues/1358)
 [![报名 Issue](https://img.shields.io/badge/报名_Issue-%231358-181717)](https://github.com/M-China/mcd-developer-innovation-challenge/issues/1358)
-[![Star](https://img.shields.io/github/stars/williamyi-666/0921?style=social)](https://github.com/williamyi-666/0921/stargazers)
+[![Star](https://img.shields.io/github/stars/williamyi-666/mcd-ordering?style=social)](https://github.com/williamyi-666/mcd-ordering/stargazers)
 
 基于麦当劳 MCP（Model Context Protocol）能力开发的创意 Skill，
 面向中国大陆地区开发者参加 **麦当劳程序员节创意开发大赛**。
